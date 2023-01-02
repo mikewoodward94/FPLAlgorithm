@@ -5,17 +5,20 @@ def fpl_optimiser(projected_scores_for_optimiser, transfers, in_bank):
     '''
     Creates excel workbook of optimal squad/starters/captain for each week with FPL transfer logic.
     '''
+    print("Starting Optimisation...")
     data = projected_scores_for_optimiser
     
     player_ids = data.index
     
-    weeks = len(data.columns[5:-25])    
+    weeks = len(data.columns[5:-25])  
     free_transfers = transfers
     bank = in_bank
     columns = data.columns[5:-25]
     
     squad_var = {i: {} for i in range(1,weeks+1)}
     start_var = {i: {} for i in range(1,weeks+1)}
+    bench_var = {i: {} for i in range(1,weeks+1)}
+    strong_bench_var = {i: {} for i in range(1,weeks+1)}
     cap_var = {i: {} for i in range(1,weeks+1)}
     both_var = {i: {} for i in range(1, weeks+1)}
     week = {i: {} for i in range(1,weeks+1)}
@@ -53,31 +56,32 @@ def fpl_optimiser(projected_scores_for_optimiser, transfers, in_bank):
         for i in player_ids:
             squad_var[a][i] = pulp.LpVariable('wk' + str(a) + 'x' + str(i), cat='Binary')
             start_var[a][i] = pulp.LpVariable('wk' + str(a) + 'y' + str(i), cat='Binary')
+            bench_var[a][i] = pulp.LpVariable('wk' + str(a) + 'be' + str(i), cat='Binary')
+            strong_bench_var[a][i] = pulp.LpVariable('wk' + str(a) + 'sb' + str(i), cat='Binary')
             cap_var[a][i] = pulp.LpVariable('wk' + str(a) + 'z' + str(i), cat='Binary')
             both_var[a][i] = pulp.LpVariable('wk' + str(a) + '+' + 'wk' + str(a+1) + 'b' + str(i), cat='Binary')
             week[a][i] = data[columns[a-1]][i]
-        
+
     prob = pulp.LpProblem("Optimiser", pulp.LpMaximize)
     
     #Objective
-    prob += pulp.lpSum([((week[a][i] * start_var[a][i]) + (week[a][i] * cap_var[a][i]) ) for a in range(1,weeks+1) for i in player_ids])
+    prob += pulp.lpSum([((week[a][i] * start_var[a][i]) + (week[a][i] * cap_var[a][i]) + (0.1*week[a][i] * strong_bench_var[a][i]) ) for a in range(1,weeks+1) for i in player_ids])
     
     #15 in squad and 11 in starters and 1 captain, starters in squad, captain in starters
     for a in range(1,weeks+1):
         prob += pulp.lpSum([squad_var[a][i] for i in player_ids]) == 15
         prob += pulp.lpSum([start_var[a][i] for i in player_ids]) == 11
+        prob += pulp.lpSum([bench_var[a][i] for i in player_ids]) == 4
+        prob += pulp.lpSum([strong_bench_var[a][i] for i in player_ids]) == 2
         prob += pulp.lpSum([cap_var[a][i] for i in player_ids]) == 1
         prob += pulp.lpSum([both_var[a][i] for i in player_ids]) >= 13
-        '''
-        prob += pulp.lpSum(squad_var[a][232]) == 1
-        prob += pulp.lpSum(squad_var[a][236]) == 1
-        prob += pulp.lpSum(squad_var[a][144]) == 1
-        prob += pulp.lpSum(start_var[a][232]) == 1
-        prob += pulp.lpSum(start_var[a][236]) == 1
-        '''
+        
         for i in player_ids:
             prob += start_var[a][i] <= squad_var[a][i]
+            prob += bench_var[a][i] <= squad_var[a][i]
             prob += cap_var[a][i] <= start_var[a][i]
+            prob += strong_bench_var[a][i] <= bench_var[a][i]
+            prob += start_var[a][i] + bench_var[a][i] <= 1
     
     #week 1 only different to current team by max FT
     prob += pulp.lpSum([squad_var[1][i] * in_team[i] for i in player_ids]) >= 15 - free_transfers
@@ -111,6 +115,7 @@ def fpl_optimiser(projected_scores_for_optimiser, transfers, in_bank):
     
     #squad has 2 gk, 5 def, 5 mid, 3 att, starting team has 1 gk, 3-5 def, 2-5 mid, 1-3 att
     for a in range(1,weeks+1):
+        prob += pulp.lpSum([strong_bench_var[a][i] * GK[i] for i in player_ids]) == 0
         prob += pulp.lpSum([squad_var[a][i] * GK[i] for i in player_ids]) == 2
         prob += pulp.lpSum([squad_var[a][i] * DEF[i] for i in player_ids]) == 5
         prob += pulp.lpSum([squad_var[a][i] * MID[i] for i in player_ids]) == 5
@@ -171,29 +176,29 @@ def fpl_optimiser(projected_scores_for_optimiser, transfers, in_bank):
     prob.solve(pulp.GLPK_CMD(timeLimit=900))
     print(pulp.LpStatus[prob.status])
     
-    #TO DO WORK ON OUTPUT
-    
-    # Output for checking/testing
-    
     output = data[['element', 'name', 'now_cost', 'in_team']]
     
     squad = {i: {} for i in range(1,weeks+1)}
     start = {i: {} for i in range(1,weeks+1)}
+    strong_bench = {i: {} for i in range(1,weeks+1)}
     cap = {i: {} for i in range(1,weeks+1)}
     
     squad_col = []
     start_col = []
+    strong_bench_col = []
     cap_col = []
     
     for a in range(0, weeks):
         squad_col.append('squad_' + columns[a])
         start_col.append('start_' + columns[a])
+        strong_bench_col.append('strong_bench_' + columns[a])
         cap_col.append('cap_' + columns[a])
     
     for a in range(1,weeks+1):
         for i in player_ids:
             squad[a][i] = squad_var[a][i].varValue
             start[a][i] = start_var[a][i].varValue
+            strong_bench[a][i] = strong_bench_var[a][i].varValue
             cap[a][i] = cap_var[a][i].varValue
     
     squad_df = pd.DataFrame(squad)
@@ -208,15 +213,22 @@ def fpl_optimiser(projected_scores_for_optimiser, transfers, in_bank):
     start_df = start_df.loc[(start_df.iloc[:,:-1] != 0).any(axis=1)]
     start_df = pd.merge(output, start_df, on=['element'], how='right')
     
+    strong_bench_df = pd.DataFrame(strong_bench)
+    strong_bench_df.columns = strong_bench_col
+    strong_bench_df['element'] = output['element'] 
+    strong_bench_df = strong_bench_df.loc[(strong_bench_df.iloc[:,:-1] != 0).any(axis=1)]
+    strong_bench_df = pd.merge(output, strong_bench_df, on=['element'], how='right')
+    
     cap_df = pd.DataFrame(cap)
     cap_df.columns = cap_col 
     cap_df['element'] = output['element'] 
     cap_df = cap_df.loc[(cap_df.iloc[:,:-1] != 0).any(axis=1)]
     cap_df = pd.merge(output, cap_df, on=['element'], how='right')
     
-    writer = pd.ExcelWriter(r'C:\Users\McSpo\.spyder-py3\FPL\Data\chosen_teams.xlsx', engine = 'xlsxwriter')
+    writer = pd.ExcelWriter('../Output/optimal_teams.xlsx', engine = 'xlsxwriter')
     squad_df.to_excel(writer, sheet_name = 'Squad', index=False)
     start_df.to_excel(writer, sheet_name = 'Start', index=False)
+    strong_bench_df.to_excel(writer, sheet_name = 'StrongBench', index=False)
     cap_df.to_excel(writer, sheet_name = 'Captain', index=False)
     writer.save()
     
