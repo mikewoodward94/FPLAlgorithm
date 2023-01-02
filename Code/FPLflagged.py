@@ -1,17 +1,19 @@
 import requests
 import pandas as pd
 
+FLAGGEDLIST = '/home/McSpoish/flagged_players.csv'
+
 def fpl_flagged():
     '''
     Creates a list of players who were flagged by gameweek(gw)/event/round.
     This is so that they can be removed from the historic data so players returning
-    from injury, injured in game etc aren't unfairly penalised for being flagged.
+    from injury etc aren't unfairly penalised for being flagged.
 
     Returns:
         Dataframe: element, round
 
     '''
-    flagged_list = pd.read_csv('../Data/flagged_players.csv')
+    flagged_list = pd.read_csv(FLAGGEDLIST)
 
     current_status = get_current_player_status()
     current_flagged_players = current_status.loc[current_status['status'].isin(['i','d'])]
@@ -24,7 +26,7 @@ def fpl_flagged():
 
     flagged_players = pd.concat([flagged_list, current_flagged_players]).drop_duplicates()
 
-    flagged_players.to_csv('../Data/flagged_players.csv', index = None)
+    flagged_players.to_csv('/home/McSpoish/flagged_players.csv', index = None)
 
 def get_current_player_status():
     '''
@@ -49,7 +51,7 @@ def get_current_gw_player_info():
     no_of_players = get_no_of_players()
     player_data = []
 
-    for i in range(1, no_of_players + 1):
+    for i in range(1, 570 + 1):
         p_url = "https://fantasy.premierleague.com/api/element-summary/"+str(i)+"/"
         rp = requests.get(p_url)
         jsonp = rp.json()
