@@ -5,11 +5,12 @@ import numpy as np
 from FPLtimiser import fpl_optimiser
 import FPLgraph
 
+algo = 3683471
 
-team_id = 
+team_id = algo
 gameweeks = 8
 transfers = 1
-in_bank = 10
+in_bank = 2
 
 
 def fpl_algorithm(team_id, gameweeks, transfers, in_bank):
@@ -100,6 +101,7 @@ def get_player_data(gameweeks):
     player_data = player_data.loc[player_data['round'] > earliest_gw]
     
     fixtures=pd.concat(fixtures)
+    fixtures = fixtures.loc[fixtures['event'] < 28]
     elements = pd.DataFrame(json['elements'])
     id_name = elements[['id', 'first_name', 'second_name', 'web_name', 'element_type']]
     fixtures = pd.merge(fixtures, id_name, left_on=['element'], right_on=['id'], how='left').drop('id',1)
@@ -186,8 +188,10 @@ def calculate_player_rating(player_data, position, team_rating):
     player_total['std'] = player.groupby('element')['total_points'].std().reset_index().rename(columns = {'total_points': 'std'})['std']
     player_total['cov'] = player_total['std']/player_total['points_per_match']
     player_total['cov'] = player_total['cov'].apply(lambda x: (abs(x) + x)/2)
-    player_total['score'] = player_total['points_per_match'] - 2*player_total['cov']
+    player_total['score'] = player_total['points_per_match']  - player_total['cov']
     player_total['score'] = player_total['score'].apply(lambda x: (abs(x) + x)/2)
+    if position == 'Defense':
+        player_total.to_csv('../Data/defense_score.csv')
     
     player_ppg=player_total[['element', 'score']]
     return(player_ppg)
@@ -221,7 +225,9 @@ def calculate_projected_scores(player_data, fixtures):
     gk_fixtures = assign_positional_ratings(player_data, 'GK', fixtures)
     fixtures = pd.concat([attack_fixtures, defense_fixtures, gk_fixtures])
     
-    fixtures['projected_score'] = fixtures['score'] * fixtures['normalised']
+    fixtures['projected_score'] = np.where(fixtures['is_home'] == False,
+    fixtures['score'] * fixtures['normalised'] * 0.95193226,
+    fixtures['score'] * fixtures['normalised'] * 1.04806774)
 
     projection = fixtures[['element', 'first_name', 'second_name', 'web_name', 'element_type', 'event', 'projected_score']]
     projection = projection.loc[projection['event'] != 0]
@@ -260,7 +266,7 @@ def prepare_for_optimiser(projected_scores, team_id):
 
 
     data = data.groupby(['element', 'name', 'element_type', 'now_cost', 'team', 'event'])['projected_score'].sum().unstack().reset_index()
-
+    
     #changing column names from numbers to strings
     a = data.columns[5:]
     b = ['w' + str(int(a[i])) for i in range(0, len(a))]
