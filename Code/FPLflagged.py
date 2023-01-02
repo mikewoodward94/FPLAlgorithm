@@ -1,8 +1,6 @@
 import requests
 import pandas as pd
 
-FLAGGEDLIST = r'C:\Users\McSpo\.spyder-py3\FPL\Data\flagged_players.csv'
-
 def fpl_flagged():
     '''
     Creates a list of players who were flagged by gameweek(gw)/event/round.
@@ -13,7 +11,7 @@ def fpl_flagged():
         Dataframe: element, round
 
     '''
-    flagged_list = pd.read_csv(FLAGGEDLIST)
+    flagged_list = pd.read_csv('../Data/flagged_players.csv')
 
     current_status = get_current_player_status()
     current_flagged_players = current_status.loc[current_status['status'].isin(['i','d'])]
@@ -26,7 +24,7 @@ def fpl_flagged():
 
     flagged_players = pd.concat([flagged_list, current_flagged_players]).drop_duplicates()
 
-    flagged_players.to_csv(r'C:\Users\McSpo\.spyder-py3\FPL\Data\flagged_players.csv', index = None)
+    flagged_players.to_csv('../Data/flagged_players.csv', index = None)
 
 def get_current_player_status():
     '''
